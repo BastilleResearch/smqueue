@@ -49,6 +49,47 @@ void ProcessReceivedMsg();
 #include "SMSMessages.h"
 using namespace SMS;
 
+// clock_gettime is not implemented on OSX
+// http://stackoverflow.com/questions/5167269/clock-gettime-alternative-in-mac-os-x
+#ifdef __MACH__
+
+#include <sys/time.h>
+#include <mach/mach_time.h>
+
+#define ORWL_NANO (+1.0E-9)
+#define ORWL_GIGA UINT64_C(1000000000)
+
+#define CLOCK_THREAD_CPUTIME_ID 0
+
+static double orwl_timebase = 0.0;
+static uint64_t orwl_timestart = 0;
+
+static double _orwl_gettime(void) {
+    // be more careful in a multithreaded environement
+    if (!orwl_timestart) {
+        mach_timebase_info_data_t tb = { 0 };
+        mach_timebase_info(&tb);
+        orwl_timebase = tb.numer;
+        orwl_timebase /= tb.denom;
+        orwl_timestart = mach_absolute_time();
+    }
+    return (mach_absolute_time() - orwl_timestart) * orwl_timebase;
+}
+
+static struct timespec orwl_gettime(void) {
+    struct timespec t;
+    double diff = _orwl_gettime();
+    t.tv_sec = diff * ORWL_NANO;
+    t.tv_nsec = diff - (t.tv_sec * ORWL_GIGA);
+    return t;
+}
+
+static int clock_gettime(int /*clk_id*/, struct timespec* t) {
+    (*t) = orwl_gettime();
+    return 0;
+}
+
+#endif // __MACH__
 
 namespace SMqueue {
 

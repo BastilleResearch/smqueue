@@ -30,7 +30,10 @@ extern ConfigurationTable gConfig;
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <mqueue.h>
+//#include <mqueue.h>
+#include <sys/types.h>
+#include <sys/ipc.h>
+#include <sys/msg.h>
 #include <time.h>
 #include <errno.h>
 
@@ -69,13 +72,15 @@ public:
 
 	SmqMessageHandler(string queueName) {
 		/* Form the queue attributes */
-		attr.mq_flags = 0; /* i.e mq_send will be block if message queue is full */
-		attr.mq_maxmsg = MQ_MAX_NUM_OF_MESSAGES;
-		attr.mq_msgsize = MQ_MESSAGE_MAX_SIZE;
-		attr.mq_curmsgs = 0;
+//		attr.mq_flags = 0; /* i.e mq_send will be block if message queue is full */
+//		attr.mq_maxmsg = MQ_MAX_NUM_OF_MESSAGES;
+//		attr.mq_msgsize = MQ_MESSAGE_MAX_SIZE;
+//		attr.mq_curmsgs = 0;
 		msg_prio = 0;
 		mqueueName = queueName;
 		mqueueOpened = false;
+        mqfd = -1;
+        msqid = 0x534d5351; // BE 'SMSQ' (could be IPC_PRIVATE?)
 	}
 
 	~SmqMessageHandler();
@@ -93,8 +98,10 @@ public:
 
 private:
 	// Message queue
-	mqd_t mqdes;  // Message queue
-	struct mq_attr attr;
+//	mqd_t mqdes;  // Message queue
+    int mqfd;
+    int msqid;
+//	struct mq_attr attr;
 	unsigned msg_prio;
 	struct timespec currenttime_before;
 	struct timespec abs_timeout;

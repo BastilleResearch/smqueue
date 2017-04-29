@@ -33,6 +33,10 @@
 SmqReader* smqReader;
 SmqWriter* smqWriter;
 
+struct sm_msg {
+    long	mtype;		/* message type (+ve integer) */
+    char    msgBuffer[MQ_MESSAGE_MAX_SIZE+10];
+};
 
 // Static function to start the threads
 void SmqMessageHandler::StartThreads() {
@@ -44,11 +48,16 @@ void SmqMessageHandler::StartThreads() {
 
 SmqMessageHandler::~SmqMessageHandler() {
 	/* Close the message queue */
-	int ret = mq_close(mqdes);
-	if (ret)
+//	int ret = mq_close(mqdes);
+    if (mqfd == -1)
+        return;
+    int ret = msgctl(msqid, IPC_RMID, NULL);
+    if (ret) {
 		LOG(DEBUG) << "Message queue close failed";
-	else
+    }
+    else {
 		LOG(DEBUG) << "Message queue closed";
+    }
 }
 
 
@@ -78,7 +87,16 @@ int SmqMessageHandler::SmqSendMessage(SimpleWrapper * pMsg) {
 		msSleep(2000);
 	} // while
 
-	ret = mq_send(mqdes, (char*) pMsg, pMsg->getSize(), 0);
+//	ret = mq_send(mqdes, (char*) pMsg, pMsg->getSize(), 0); // Blocks if queue is full
+    struct sm_msg m;
+    if (pMsg->getSize() < sizeof(m.msgBuffer))
+    {
+        LOG(WARNING) << "Message too big to be sent:" << pMsg->getSize();
+        return -1;
+    }
+    m.mtype = 1;
+    memcpy(m.msgBuffer, pMsg, pMsg->getSize());
+    ret = msgsnd(mqfd, &m, pMsg->getSize(), 0);
 	if (ret) {
 		LOG(DEBUG) << "Message failed to be sent error:" << ret << " errno:" << errno;
 		returnValue = -1;
@@ -116,7 +134,7 @@ bool SmqMessageHandler::queueOpened() {
  */
 int SmqMessageHandler::SmqWaitforMessage(int TimeoutMS, char * MsgBuffer, int MsgBufferSize) {
 	int msgLength = 0;
-	struct mq_attr attrList;
+//	struct mq_attr attrList;
 
 	//LOG(DEBUG) << "Waiting for message in queue:" << getQueueName() << " tmo:" << TimeoutMS << " bufsize:" << MsgBufferSize;
 
@@ -146,7 +164,39 @@ int SmqMessageHandler::SmqWaitforMessage(int TimeoutMS, char * MsgBuffer, int Ms
 
 	// Wait for the message
 	// LOG(DEBUG) << "Real enter wait for message in queue:"<< getQueueName().c_str() << " tmo:" << TimeoutMS;
-	msgLength = mq_timedreceive(mqdes, MsgBuffer, MsgBufferSize, &msg_prio, &abs_timeout);
+//	msgLength = mq_timedreceive(mqdes, MsgBuffer, MsgBufferSize, &msg_prio, &abs_timeout);
+    struct sm_msg m;
+    double time_start = _orwl_gettime();
+    while (true)
+    {
+        int ret = msgrcv(mqfd, &m, sizeof(m.msgBuffer), 1, IPC_NOWAIT);
+        if (ret >= 0)
+        {
+            if (ret == 0)
+            {
+                LOG(WARNING) << "Empty message";
+            }
+            
+            msgLength = ret;
+            break;
+        }
+        if (ret == -1)
+        {
+            if (errno != ENOMSG)
+            {
+                LOG(WARNING) << "Unknown error from msgrcv: " << errno;
+                msgLength = -1;
+                break;
+            }
+        }
+        
+        double time_now = _orwl_gettime();
+        if ((time_now - time_start) >= ((double)(TimeoutMS) * 1e6)) // ms to ns
+        {
+            msgLength = 0;
+            break;
+        }
+    }
 
 #if 0
 	// only enable for debugging
@@ -202,16 +252,18 @@ bool SmqMessageHandler::SmqInitReceiver() {
 	LOG(DEBUG) << "SmqInitReceiver queue name:" << mqueueName;
 
 	/* Create message queue */
-	mqdes = mq_open(mqueueName.c_str(), O_RDWR | O_CREAT, MQ_MODE, &attr);  // Should be this one
+//	mqdes = mq_open(mqueueName.c_str(), O_RDWR | O_CREAT, MQ_MODE, &attr);  // Should be this one
+    mqfd = msgget(msqid, 0644 | IPC_CREAT);
 
-	if (mqdes != (mqd_t)-1 ) {
+	//if (mqdes != (mqd_t)-1 ) {
+    if (mqfd != -1) {
 		LOG(DEBUG) << "Message queue opened:" << mqueueName;
 		retValue = true;
 		mqueueOpened = true;
 	}
 	else {
 		LOG(DEBUG) << "Message Queue FAILED to open";
-		LOG(DEBUG) << "mq_open error:" << errno << " mqdes:" << mqdes;
+		LOG(DEBUG) << "mq_open error:" << errno/* << " mqdes:" << mqdes*/;
 		retValue = false;
 	}
 
@@ -222,11 +274,16 @@ bool SmqMessageHandler::SmqInitReceiver() {
 long SmqMessageHandler::getMessageQueueSize() {
 	int error;
 	long count = -1;
-	struct mq_attr localAttr;
+//	struct mq_attr localAttr;
+    struct msqid_ds ds;
 
-	error = mq_getattr(mqdes, &localAttr);
-	if (!error)
-		count = localAttr.mq_curmsgs;
+//	error = mq_getattr(mqdes, &localAttr);
+//	if (!error)
+//		count = localAttr.mq_curmsgs;
+    
+    error = msgctl(mqfd, IPC_STAT, &ds);
+    if (!error)
+        count = ds.msg_qnum;
 
 	return count;
 }

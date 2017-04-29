@@ -20,7 +20,8 @@
 #
 
 AM_CPPFLAGS = $(STD_DEFINES_AND_INCLUDES)
-AM_CXXFLAGS := -Wall -lrt -pthread -DTIMESTAMP_ISO=`date +'"%Y-%m-%dT%H:%M:%S"'`
+# AM_CXXFLAGS := -Wall -lrt -pthread -DTIMESTAMP_ISO=`date +'"%Y-%m-%dT%H:%M:%S"'`
+AM_CXXFLAGS := -Wall -pthread -DTIMESTAMP_ISO=`date +'"%Y-%m-%dT%H:%M:%S"'`
 
 REPOREV = -D'REPO_REV="$(shell ./$(top_builddir)/Globals/GrabRepoInfo.sh $(top_builddir))"'
 

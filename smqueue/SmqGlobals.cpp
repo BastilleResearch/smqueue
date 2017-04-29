@@ -24,6 +24,7 @@
 
 
 #include "SmqGlobals.h"
+#include "smqueue.h"
 #include "Sockets.h"
 #include <Logger.h>
 
